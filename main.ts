@@ -5,6 +5,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 // Define the interface for our plugin settings
 interface TaskflowPluginSettings {
   rootFolder: string;
+  taskLabel: string;
   templatePath: string;
   propertyName: string;
   trueFolder: string;
@@ -16,6 +17,7 @@ interface TaskflowPluginSettings {
   completedDatePropertyName: string;
   taskCounter: number;
   goalRootFolder: string;
+  goalLabel: string;
   goalTemplatePath: string;
   goalPropertyName: string;
   goalTrueFolder: string;
@@ -30,6 +32,7 @@ interface TaskflowPluginSettings {
 // Define default settings for the plugin
 const DEFAULT_SETTINGS: TaskflowPluginSettings = {
   rootFolder: 'tasks',
+  taskLabel: 'TASK',
   templatePath: '',
   propertyName: '✅',
   trueFolder: 'archive',
@@ -41,6 +44,7 @@ const DEFAULT_SETTINGS: TaskflowPluginSettings = {
   completedDatePropertyName: 'completed_date',
   taskCounter: 1,
   goalRootFolder: 'goals',
+  goalLabel: 'GOAL',
   goalTemplatePath: '',
   goalPropertyName: '✅',
   goalTrueFolder: 'archive',
@@ -161,13 +165,14 @@ export default class TaskflowPlugin extends Plugin {
    * one above the highest TASK number found. Falls back to 1 if none exist.
    */
   async detectTaskCounter(): Promise<void> {
-    const { rootFolder } = this.settings;
+    const { rootFolder, taskLabel } = this.settings;
     const files = this.app.vault.getMarkdownFiles();
     let maxNum = 0;
+    const pattern = new RegExp(`^\\[${taskLabel}-(\\d+)\\]`);
 
     for (const file of files) {
       if (rootFolder && !file.path.startsWith(`${rootFolder}/`)) continue;
-      const match = file.name.match(/^\[TASK-(\d+)\]/);
+      const match = file.name.match(pattern);
       if (match) {
         const num = parseInt(match[1]!, 10);
         if (num > maxNum) maxNum = num;
@@ -183,13 +188,14 @@ export default class TaskflowPlugin extends Plugin {
    * one above the highest GOAL number found. Falls back to 1 if none exist.
    */
   async detectGoalCounter(): Promise<void> {
-    const { goalRootFolder } = this.settings;
+    const { goalRootFolder, goalLabel } = this.settings;
     const files = this.app.vault.getMarkdownFiles();
     let maxNum = 0;
+    const pattern = new RegExp(`^\\[${goalLabel}-(\\d+)\\]`);
 
     for (const file of files) {
       if (goalRootFolder && !file.path.startsWith(`${goalRootFolder}/`)) continue;
-      const match = file.name.match(/^\[GOAL-(\d+)\]/);
+      const match = file.name.match(pattern);
       if (match) {
         const num = parseInt(match[1]!, 10);
         if (num > maxNum) maxNum = num;
@@ -201,18 +207,103 @@ export default class TaskflowPlugin extends Plugin {
   }
 
   /**
+   * Renames all task files to use the current taskLabel setting.
+   * Skips files that would conflict with existing filenames.
+   */
+  async renameAllTaskFiles(): Promise<void> {
+    const { rootFolder, taskLabel } = this.settings;
+    const files = this.app.vault.getMarkdownFiles();
+    const pattern = /^\[(.+?)-(\d+)\] (.+)\.md$/;
+
+    let renamedCount = 0;
+    let skippedCount = 0;
+
+    for (const file of files) {
+      // Only process files in the root folder
+      if (rootFolder && !file.path.startsWith(`${rootFolder}/`)) continue;
+
+      const match = file.name.match(pattern);
+      if (match) {
+        const [, currentLabel, number, title] = match;
+
+        // Skip if already using the correct label
+        if (currentLabel === taskLabel) continue;
+
+        // Build new filename with current label
+        const newFileName = `[${taskLabel}-${number}] ${title}.md`;
+        const newPath = file.parent ? `${file.parent.path}/${newFileName}` : newFileName;
+
+        // Check if target already exists (conflict)
+        const existing = this.app.vault.getAbstractFileByPath(newPath);
+        if (existing) {
+          skippedCount++;
+          continue;
+        }
+
+        // Rename the file (this updates all links in the vault)
+        await this.app.vault.rename(file, newPath);
+        renamedCount++;
+      }
+    }
+
+    new Notice(`Taskflow: Renamed ${renamedCount} task file(s). Skipped ${skippedCount} due to conflicts.`);
+  }
+
+  /**
+   * Renames all goal files to use the current goalLabel setting.
+   * Skips files that would conflict with existing filenames.
+   */
+  async renameAllGoalFiles(): Promise<void> {
+    const { goalRootFolder, goalLabel } = this.settings;
+    const files = this.app.vault.getMarkdownFiles();
+    const pattern = /^\[(.+?)-(\d+)\] (.+)\.md$/;
+
+    let renamedCount = 0;
+    let skippedCount = 0;
+
+    for (const file of files) {
+      // Only process files in the goal root folder
+      if (goalRootFolder && !file.path.startsWith(`${goalRootFolder}/`)) continue;
+
+      const match = file.name.match(pattern);
+      if (match) {
+        const [, currentLabel, number, title] = match;
+
+        // Skip if already using the correct label
+        if (currentLabel === goalLabel) continue;
+
+        // Build new filename with current label
+        const newFileName = `[${goalLabel}-${number}] ${title}.md`;
+        const newPath = file.parent ? `${file.parent.path}/${newFileName}` : newFileName;
+
+        // Check if target already exists (conflict)
+        const existing = this.app.vault.getAbstractFileByPath(newPath);
+        if (existing) {
+          skippedCount++;
+          continue;
+        }
+
+        // Rename the file (this updates all links in the vault)
+        await this.app.vault.rename(file, newPath);
+        renamedCount++;
+      }
+    }
+
+    new Notice(`Taskflow: Renamed ${renamedCount} goal file(s). Skipped ${skippedCount} due to conflicts.`);
+  }
+
+  /**
    * Moves the currently active task file to the configured icebox folder.
    */
   async moveToIcebox() {
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) return;
 
-    if (!activeFile.name.startsWith('[TASK-')) {
+    const { taskLabel, rootFolder, iceboxFolder } = this.settings;
+    if (!activeFile.name.startsWith(`[${taskLabel}-`)) {
       new Notice('Taskflow: Active file is not a task file.');
       return;
     }
-
-    const { rootFolder, iceboxFolder } = this.settings;
     const absoluteIcebox = buildPath(rootFolder, iceboxFolder);
     if (!absoluteIcebox) {
       new Notice('Taskflow: Icebox folder is not configured.');
@@ -238,12 +329,11 @@ export default class TaskflowPlugin extends Plugin {
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) return;
 
-    if (!activeFile.name.startsWith('[TASK-')) {
+    const { taskLabel, rootFolder } = this.settings;
+    if (!activeFile.name.startsWith(`[${taskLabel}-`)) {
       new Notice('Taskflow: Active file is not a task file.');
       return;
     }
-
-    const { rootFolder } = this.settings;
     const targetFolder = rootFolder || '';
     const currentFolder = activeFile.parent?.path || '';
 
@@ -267,12 +357,11 @@ export default class TaskflowPlugin extends Plugin {
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) return;
 
-    if (!activeFile.name.startsWith('[GOAL-')) {
+    const { goalLabel, goalRootFolder, goalIceboxFolder } = this.settings;
+    if (!activeFile.name.startsWith(`[${goalLabel}-`)) {
       new Notice('Taskflow: Active file is not a goal file.');
       return;
     }
-
-    const { goalRootFolder, goalIceboxFolder } = this.settings;
     const absoluteIcebox = buildPath(goalRootFolder, goalIceboxFolder);
     if (!absoluteIcebox) {
       new Notice('Taskflow: Goal icebox folder is not configured.');
@@ -298,12 +387,11 @@ export default class TaskflowPlugin extends Plugin {
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) return;
 
-    if (!activeFile.name.startsWith('[GOAL-')) {
+    const { goalLabel, goalRootFolder } = this.settings;
+    if (!activeFile.name.startsWith(`[${goalLabel}-`)) {
       new Notice('Taskflow: Active file is not a goal file.');
       return;
     }
-
-    const { goalRootFolder } = this.settings;
     const targetFolder = goalRootFolder || '';
     const currentFolder = activeFile.parent?.path || '';
 
@@ -532,9 +620,9 @@ class CreateTaskModal extends Modal {
     title = title.trim();
     if (!title) return;
 
-    const { rootFolder, taskCounter, propertyName, templatePath, enableBacklog, backlogFolder } = this.plugin.settings;
+    const { rootFolder, taskLabel, taskCounter, propertyName, templatePath, enableBacklog, backlogFolder } = this.plugin.settings;
     const paddedNum = String(taskCounter).padStart(3, '0');
-    const fileName = `[TASK-${paddedNum}] ${title}.md`;
+    const fileName = `[${taskLabel}-${paddedNum}] ${title}.md`;
     const targetFolder = enableBacklog
       ? buildPath(rootFolder, backlogFolder)
       : (rootFolder || '');
@@ -612,9 +700,9 @@ class CreateGoalModal extends Modal {
     title = title.trim();
     if (!title) return;
 
-    const { goalRootFolder, goalCounter, goalPropertyName, goalTemplatePath, goalBacklogFolder } = this.plugin.settings;
+    const { goalRootFolder, goalLabel, goalCounter, goalPropertyName, goalTemplatePath, goalBacklogFolder } = this.plugin.settings;
     const paddedNum = String(goalCounter).padStart(3, '0');
-    const fileName = `[GOAL-${paddedNum}] ${title}.md`;
+    const fileName = `[${goalLabel}-${paddedNum}] ${title}.md`;
     // Goals always go to backlog folder
     const targetFolder = buildPath(goalRootFolder, goalBacklogFolder);
     const filePath = targetFolder ? `${targetFolder}/${fileName}` : fileName;
@@ -686,6 +774,24 @@ class TaskflowSettingTab extends PluginSettingTab {
           this.plugin.settings.rootFolder = value;
           await this.plugin.saveSettings();
           await this.plugin.detectTaskCounter();
+        }));
+
+    new Setting(containerEl)
+      .setName('Task Label')
+      .setDesc('The label used in task filenames (e.g., "TASK" creates "[TASK-001] My Task.md"). Use the button to rename all existing task files to match the current label.')
+      .addText(text => text
+        .setPlaceholder('TASK')
+        .setValue(this.plugin.settings.taskLabel)
+        .onChange(async (value) => {
+          this.plugin.settings.taskLabel = value;
+          await this.plugin.saveSettings();
+        }))
+      .addButton(button => button
+        .setButtonText('Update task filenames to current label')
+        .setTooltip('Rename all task files in the root folder to use the current label')
+        .onClick(async () => {
+          await this.plugin.renameAllTaskFiles();
+          this.display();
         }));
 
     new Setting(containerEl)
@@ -829,6 +935,24 @@ class TaskflowSettingTab extends PluginSettingTab {
           this.plugin.settings.goalRootFolder = value;
           await this.plugin.saveSettings();
           await this.plugin.detectGoalCounter();
+        }));
+
+    new Setting(containerEl)
+      .setName('Goal Label')
+      .setDesc('The label used in goal filenames (e.g., "GOAL" creates "[GOAL-001] My Goal.md"). Use the button to rename all existing goal files to match the current label.')
+      .addText(text => text
+        .setPlaceholder('GOAL')
+        .setValue(this.plugin.settings.goalLabel)
+        .onChange(async (value) => {
+          this.plugin.settings.goalLabel = value;
+          await this.plugin.saveSettings();
+        }))
+      .addButton(button => button
+        .setButtonText('Update goal filenames to current label')
+        .setTooltip('Rename all goal files in the goal root folder to use the current label')
+        .onClick(async () => {
+          await this.plugin.renameAllGoalFiles();
+          this.display();
         }));
 
     new Setting(containerEl)
