@@ -700,7 +700,7 @@ class TaskflowSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Checkbox Property Name')
+      .setName('Completed Property Name')
       .setDesc('The name of the frontmatter property (e.g., "completed") that will trigger the file move.')
       .addText(text => text
         .setPlaceholder('✅')
@@ -711,8 +711,8 @@ class TaskflowSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Folder for "True" value')
-      .setDesc('The folder where the file will be moved when the property is set to `true`. Relative to Root Folder if one is set.')
+      .setName('Completed Folder')
+      .setDesc('The folder where the file will be moved when the completed property is set to `true`. Relative to Root Folder if one is set.')
       .addText(text => text
         .setPlaceholder('archive')
         .setValue(this.plugin.settings.trueFolder)
@@ -722,8 +722,8 @@ class TaskflowSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Folder for "False" value (Original)')
-      .setDesc('The folder where the file will be moved back to when the property is set to `false`. Relative to Root Folder if one is set. Leave blank to use the Root Folder itself.')
+      .setName('Uncompleted Folder')
+      .setDesc('The folder where the file will be moved back to when the completed property is set to `false`. Relative to Root Folder if one is set. Leave blank to use the Root Folder itself.')
       .addText(text => text
         .setPlaceholder('Leave blank to use Root Folder')
         .setValue(this.plugin.settings.falseFolder)
@@ -843,7 +843,7 @@ class TaskflowSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Goal Property Name')
+      .setName('Completed Property Name')
       .setDesc('The name of the frontmatter property that will trigger the goal file move.')
       .addText(text => text
         .setPlaceholder('✅')
@@ -854,8 +854,8 @@ class TaskflowSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Goal Folder for "True" value')
-      .setDesc('Where goals are moved when the property is set to `true`. Relative to Goal Root Folder if one is set.')
+      .setName('Completed Folder')
+      .setDesc('Where goals are moved when the completed property is set to `true`. Relative to Goal Root Folder if one is set.')
       .addText(text => text
         .setPlaceholder('archive')
         .setValue(this.plugin.settings.goalTrueFolder)
@@ -865,8 +865,8 @@ class TaskflowSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Goal Folder for "False" value')
-      .setDesc('Where goals are moved when the property is set to `false`. Relative to Goal Root Folder if one is set. Leave blank to use the Goal Root Folder itself.')
+      .setName('Uncompleted Folder')
+      .setDesc('Where goals are moved when the completed property is set to `false`. Relative to Goal Root Folder if one is set. Leave blank to use the Goal Root Folder itself.')
       .addText(text => text
         .setPlaceholder('Leave blank to use Goal Root Folder')
         .setValue(this.plugin.settings.goalFalseFolder)
