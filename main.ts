@@ -27,6 +27,7 @@ interface TaskflowPluginSettings {
   enableGoalCompletedDate: boolean;
   goalCompletedDatePropertyName: string;
   goalCounter: number;
+  childTaskCompletionBehavior: 'ask' | 'always' | 'never';
 }
 
 // Define default settings for the plugin
@@ -54,6 +55,7 @@ const DEFAULT_SETTINGS: TaskflowPluginSettings = {
   enableGoalCompletedDate: false,
   goalCompletedDatePropertyName: 'completed_date',
   goalCounter: 1,
+  childTaskCompletionBehavior: 'ask',
 };
 
 // Builds an absolute vault path from a root and a relative sub-path.
@@ -524,7 +526,7 @@ export default class TaskflowPlugin extends Plugin {
       }
 
       const currentFolderPath = file.parent?.path || '';
-      if (currentFolderPath === targetFolder || currentFolderPath.startsWith(`${targetFolder}/`)) {
+      if (currentFolderPath === targetFolder) {
         return; // Already in the correct folder.
       }
 
@@ -558,6 +560,46 @@ export default class TaskflowPlugin extends Plugin {
     } finally {
       this.processing.delete(originalPath);
     }
+  }
+
+  findChildTasks(goalFile: TFile): TFile[] {
+    const { rootFolder } = this.settings;
+    const goalName = goalFile.basename;
+    const allFiles = this.app.vault.getMarkdownFiles();
+    const children: TFile[] = [];
+
+    for (const file of allFiles) {
+      if (rootFolder && !file.path.startsWith(`${rootFolder}/`)) continue;
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (!cache?.frontmatter) continue;
+      let parent = cache.frontmatter['parent'];
+      if (typeof parent !== 'string' || !parent) continue;
+      // Strip wiki-link brackets if present
+      parent = parent.replace(/^\[\[|\]\]$/g, '');
+      // Strip .md extension if present
+      parent = parent.replace(/\.md$/, '');
+      if (parent === goalName) {
+        children.push(file);
+      }
+    }
+    return children;
+  }
+
+  async completeChildTasks(children: TFile[]): Promise<void> {
+    const { propertyName } = this.settings;
+    for (const child of children) {
+      await this.app.fileManager.processFrontMatter(child, (frontmatter) => {
+        frontmatter[propertyName] = true;
+      });
+    }
+  }
+
+  askCompleteChildren(childCount: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      let resolved = false;
+      const safeResolve = (val: boolean) => { if (!resolved) { resolved = true; resolve(val); } };
+      new CompleteChildTasksModal(this.app, childCount, safeResolve).open();
+    });
   }
 
   /**
@@ -605,7 +647,7 @@ export default class TaskflowPlugin extends Plugin {
       }
 
       const currentFolderPath = file.parent?.path || '';
-      if (currentFolderPath === targetFolder || currentFolderPath.startsWith(`${targetFolder}/`)) {
+      if (currentFolderPath === targetFolder) {
         return; // Already in the correct folder.
       }
 
@@ -631,6 +673,23 @@ export default class TaskflowPlugin extends Plugin {
           await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
             delete frontmatter[goalCompletedDatePropertyName];
           });
+        }
+      }
+
+      // Handle child task completion when goal is marked done
+      if (propertyValue === true) {
+        const behavior = this.settings.childTaskCompletionBehavior;
+        if (behavior !== 'never') {
+          const children = this.findChildTasks(file);
+          if (children.length > 0) {
+            let shouldComplete = behavior === 'always';
+            if (behavior === 'ask') {
+              shouldComplete = await this.askCompleteChildren(children.length);
+            }
+            if (shouldComplete) {
+              await this.completeChildTasks(children);
+            }
+          }
         }
       }
 
@@ -798,6 +857,45 @@ class CreateGoalModal extends Modal {
 
   onClose() {
     this.contentEl.empty();
+  }
+}
+
+class CompleteChildTasksModal extends Modal {
+  private resolvePromise: (value: boolean) => void;
+  private childCount: number;
+
+  constructor(app: App, childCount: number, resolvePromise: (value: boolean) => void) {
+    super(app);
+    this.childCount = childCount;
+    this.resolvePromise = resolvePromise;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl('h2', { text: 'Complete child tasks?' });
+    contentEl.createEl('p', {
+      text: `This goal has ${this.childCount} child task(s). Mark them as completed?`
+    });
+
+    const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+
+    const yesBtn = buttonContainer.createEl('button', { text: 'Yes, complete them', cls: 'mod-cta' });
+    yesBtn.addEventListener('click', () => {
+      this.resolvePromise(true);
+      this.close();
+    });
+
+    const noBtn = buttonContainer.createEl('button', { text: 'No, leave them' });
+    noBtn.addEventListener('click', () => {
+      this.resolvePromise(false);
+      this.close();
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+    // If closed via escape/click-outside, treat as "no"
+    this.resolvePromise(false);
   }
 }
 
@@ -1072,6 +1170,21 @@ class TaskflowSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.goalBacklogFolder)
         .onChange(async (value) => {
           this.plugin.settings.goalBacklogFolder = value;
+          await this.plugin.saveSettings();
+        }));
+
+    containerEl.createEl('h3', { text: 'Child Task Completion' });
+
+    new Setting(containerEl)
+      .setName('When a goal is completed')
+      .setDesc('Controls whether child tasks (tasks with a "parent" field matching the goal) are automatically marked as completed.')
+      .addDropdown(dropdown => dropdown
+        .addOption('ask', 'Ask me each time')
+        .addOption('always', 'Always complete child tasks')
+        .addOption('never', 'Never complete child tasks')
+        .setValue(this.plugin.settings.childTaskCompletionBehavior)
+        .onChange(async (value: string) => {
+          this.plugin.settings.childTaskCompletionBehavior = value as 'ask' | 'always' | 'never';
           await this.plugin.saveSettings();
         }));
 
