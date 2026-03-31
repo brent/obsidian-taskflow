@@ -549,7 +549,7 @@ export default class TaskflowPlugin extends Plugin {
             if (!frontmatter[completedDatePropertyName]) {
               const now = new Date();
               const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-              frontmatter[completedDatePropertyName] = formatInTimeZone(now, timeZone, "yyyy-MM-dd'T'HH:mm:ssXXX");
+              frontmatter[completedDatePropertyName] = formatInTimeZone(now, timeZone, "yyyy-MM-dd");
             }
           });
         } else if (propertyValue === false) {
@@ -670,7 +670,7 @@ export default class TaskflowPlugin extends Plugin {
             if (!frontmatter[goalCompletedDatePropertyName]) {
               const now = new Date();
               const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-              frontmatter[goalCompletedDatePropertyName] = formatInTimeZone(now, timeZone, "yyyy-MM-dd'T'HH:mm:ssXXX");
+              frontmatter[goalCompletedDatePropertyName] = formatInTimeZone(now, timeZone, "yyyy-MM-dd");
             }
           });
         } else if (propertyValue === false) {
