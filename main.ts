@@ -45,7 +45,7 @@ const DEFAULT_SETTINGS: TaskflowPluginSettings = {
   enableBacklog: false,
   backlogFolder: 'backlog',
   enableCompletedDate: false,
-  completedDatePropertyName: 'completed_date',
+  completedDatePropertyName: 'done',
   taskCounter: 1,
   goalRootFolder: 'goals',
   goalLabel: 'GOAL',
@@ -56,7 +56,7 @@ const DEFAULT_SETTINGS: TaskflowPluginSettings = {
   goalIceboxFolder: 'icebox',
   goalBacklogFolder: 'backlog',
   enableGoalCompletedDate: false,
-  goalCompletedDatePropertyName: 'completed_date',
+  goalCompletedDatePropertyName: 'done',
   goalCounter: 1,
   childTaskCompletionBehavior: 'ask',
   childTaskFlagBehavior: 'ask',
@@ -92,19 +92,36 @@ export default class TaskflowPlugin extends Plugin {
 
     this.addCommand({
       id: 'move-to-icebox',
-      name: 'Move current task to icebox',
+      name: 'Icebox task',
       callback: () => this.moveToIcebox(),
     });
 
     this.addCommand({
       id: 'move-out-of-backlog',
-      name: 'Move current task out of backlog',
+      name: 'Make task active',
       checkCallback: (checking) => {
         if (!this.settings.enableBacklog) return false;
         if (checking) return true;
         this.moveOutOfBacklog();
         return true;
       },
+    });
+
+    this.addCommand({
+      id: 'backlog-task',
+      name: 'Backlog task',
+      checkCallback: (checking) => {
+        if (!this.settings.enableBacklog) return false;
+        if (checking) return true;
+        this.moveToBacklog();
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: 'archive-task',
+      name: 'Archive task',
+      callback: () => this.archiveTask(),
     });
 
     this.addCommand({
@@ -115,14 +132,26 @@ export default class TaskflowPlugin extends Plugin {
 
     this.addCommand({
       id: 'move-goal-to-icebox',
-      name: 'Move current goal to icebox',
+      name: 'Icebox goal',
       callback: () => this.moveGoalToIcebox(),
     });
 
     this.addCommand({
       id: 'move-goal-out-of-backlog',
-      name: 'Move current goal out of backlog',
+      name: 'Make goal active',
       callback: () => this.moveGoalOutOfBacklog(),
+    });
+
+    this.addCommand({
+      id: 'backlog-goal',
+      name: 'Backlog goal',
+      callback: () => this.moveGoalToBacklog(),
+    });
+
+    this.addCommand({
+      id: 'archive-goal',
+      name: 'Archive goal',
+      callback: () => this.archiveGoal(),
     });
 
     // ✅ FIX: Use the 'metadataCache.changed' event for instant frontmatter updates.
@@ -414,6 +443,126 @@ export default class TaskflowPlugin extends Plugin {
     await this.ensureFolder(targetFolder);
     await this.app.vault.rename(activeFile, newPath);
     new Notice('Taskflow: Moved out of backlog.');
+  }
+
+  /**
+   * Moves the currently active task file to the backlog folder.
+   */
+  async moveToBacklog() {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile) return;
+
+    const { taskLabel, rootFolder, backlogFolder } = this.settings;
+    if (!activeFile.name.startsWith(`[${taskLabel}-`)) {
+      new Notice('Taskflow: Active file is not a task file.');
+      return;
+    }
+    const absoluteBacklog = buildPath(rootFolder, backlogFolder);
+    if (!absoluteBacklog) {
+      new Notice('Taskflow: Backlog folder is not configured.');
+      return;
+    }
+
+    const currentFolder = activeFile.parent?.path || '';
+    if (currentFolder === absoluteBacklog) {
+      new Notice('Taskflow: File is already in the backlog.');
+      return;
+    }
+
+    const newPath = `${absoluteBacklog}/${activeFile.name}`;
+    await this.ensureFolder(absoluteBacklog);
+    await this.app.vault.rename(activeFile, newPath);
+    new Notice('Taskflow: Moved to backlog.');
+  }
+
+  /**
+   * Moves the currently active task file to the archive (true) folder.
+   */
+  async archiveTask() {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile) return;
+
+    const { taskLabel, rootFolder, trueFolder } = this.settings;
+    if (!activeFile.name.startsWith(`[${taskLabel}-`)) {
+      new Notice('Taskflow: Active file is not a task file.');
+      return;
+    }
+    const absoluteArchive = buildPath(rootFolder, trueFolder);
+    if (!absoluteArchive) {
+      new Notice('Taskflow: Archive folder is not configured.');
+      return;
+    }
+
+    const currentFolder = activeFile.parent?.path || '';
+    if (currentFolder === absoluteArchive) {
+      new Notice('Taskflow: File is already in the archive.');
+      return;
+    }
+
+    const newPath = `${absoluteArchive}/${activeFile.name}`;
+    await this.ensureFolder(absoluteArchive);
+    await this.app.vault.rename(activeFile, newPath);
+    new Notice('Taskflow: Moved to archive.');
+  }
+
+  /**
+   * Moves the currently active goal file to the goal backlog folder.
+   */
+  async moveGoalToBacklog() {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile) return;
+
+    const { goalLabel, goalRootFolder, goalBacklogFolder } = this.settings;
+    if (!activeFile.name.startsWith(`[${goalLabel}-`)) {
+      new Notice('Taskflow: Active file is not a goal file.');
+      return;
+    }
+    const absoluteBacklog = buildPath(goalRootFolder, goalBacklogFolder);
+    if (!absoluteBacklog) {
+      new Notice('Taskflow: Goal backlog folder is not configured.');
+      return;
+    }
+
+    const currentFolder = activeFile.parent?.path || '';
+    if (currentFolder === absoluteBacklog) {
+      new Notice('Taskflow: File is already in the backlog.');
+      return;
+    }
+
+    const newPath = `${absoluteBacklog}/${activeFile.name}`;
+    await this.ensureFolder(absoluteBacklog);
+    await this.app.vault.rename(activeFile, newPath);
+    new Notice('Taskflow: Moved to backlog.');
+  }
+
+  /**
+   * Moves the currently active goal file to the archive (true) folder.
+   */
+  async archiveGoal() {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile) return;
+
+    const { goalLabel, goalRootFolder, goalTrueFolder } = this.settings;
+    if (!activeFile.name.startsWith(`[${goalLabel}-`)) {
+      new Notice('Taskflow: Active file is not a goal file.');
+      return;
+    }
+    const absoluteArchive = buildPath(goalRootFolder, goalTrueFolder);
+    if (!absoluteArchive) {
+      new Notice('Taskflow: Goal archive folder is not configured.');
+      return;
+    }
+
+    const currentFolder = activeFile.parent?.path || '';
+    if (currentFolder === absoluteArchive) {
+      new Notice('Taskflow: File is already in the archive.');
+      return;
+    }
+
+    const newPath = `${absoluteArchive}/${activeFile.name}`;
+    await this.ensureFolder(absoluteArchive);
+    await this.app.vault.rename(activeFile, newPath);
+    new Notice('Taskflow: Moved to archive.');
   }
 
   /**
@@ -1177,7 +1326,7 @@ class TaskflowSettingTab extends PluginSettingTab {
         .setName('Completed Date Property Name')
         .setDesc('The name of the frontmatter property to store the completed date.')
         .addText(text => text
-          .setPlaceholder('completed_date')
+          .setPlaceholder('done')
           .setValue(this.plugin.settings.completedDatePropertyName)
           .onChange(async (value) => {
             this.plugin.settings.completedDatePropertyName = value;
@@ -1361,7 +1510,7 @@ class TaskflowSettingTab extends PluginSettingTab {
         .setName('Goal Completed Date Property Name')
         .setDesc('The name of the frontmatter property to store the goal completed date.')
         .addText(text => text
-          .setPlaceholder('completed_date')
+          .setPlaceholder('done')
           .setValue(this.plugin.settings.goalCompletedDatePropertyName)
           .onChange(async (value) => {
             this.plugin.settings.goalCompletedDatePropertyName = value;
