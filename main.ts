@@ -649,7 +649,7 @@ export default class TaskflowPlugin extends Plugin {
     this.processing.add(originalPath);
 
     try {
-      const { rootFolder, propertyName, trueFolder, falseFolder, enableCompletedDate, completedDatePropertyName } = this.settings;
+      const { rootFolder, propertyName, trueFolder, falseFolder, enableBacklog, backlogFolder, enableCompletedDate, completedDatePropertyName } = this.settings;
 
       // If a root folder is configured, only process files inside it.
       if (rootFolder && !file.path.startsWith(`${rootFolder}/`)) {
@@ -658,6 +658,7 @@ export default class TaskflowPlugin extends Plugin {
 
       const absoluteTrueFolder = buildPath(rootFolder, trueFolder);
       const absoluteFalseFolder = buildPath(rootFolder, falseFolder);
+      const absoluteBacklogFolder = enableBacklog ? buildPath(rootFolder, backlogFolder) : null;
 
       if (!propertyName || !absoluteTrueFolder || !absoluteFalseFolder) {
         console.warn('Taskflow Plugin: Settings are incomplete.');
@@ -677,6 +678,7 @@ export default class TaskflowPlugin extends Plugin {
         targetFolder = absoluteTrueFolder;
       } else if (propertyValue === false) {
         if (currentFolderPath === absoluteTrueFolder) return; // archived manually, don't evict
+        if (absoluteBacklogFolder && currentFolderPath === absoluteBacklogFolder) return; // in backlog, don't evict
         targetFolder = absoluteFalseFolder;
       } else {
         return; // Property not found or not a boolean.
@@ -788,7 +790,7 @@ export default class TaskflowPlugin extends Plugin {
     let newPath = '';
 
     try {
-      const { goalRootFolder, goalPropertyName, goalTrueFolder, goalFalseFolder, enableGoalCompletedDate, goalCompletedDatePropertyName } = this.settings;
+      const { goalRootFolder, goalPropertyName, goalTrueFolder, goalFalseFolder, goalBacklogFolder, enableGoalCompletedDate, goalCompletedDatePropertyName } = this.settings;
 
       // If a goal root folder is configured, only process files inside it.
       if (goalRootFolder && !file.path.startsWith(`${goalRootFolder}/`)) {
@@ -797,6 +799,7 @@ export default class TaskflowPlugin extends Plugin {
 
       const absoluteTrueFolder = buildPath(goalRootFolder, goalTrueFolder);
       const absoluteFalseFolder = buildPath(goalRootFolder, goalFalseFolder);
+      const absoluteGoalBacklogFolder = goalBacklogFolder ? buildPath(goalRootFolder, goalBacklogFolder) : null;
 
       if (!goalPropertyName || !absoluteTrueFolder || !absoluteFalseFolder) {
         console.warn('Taskflow Plugin: Goal settings are incomplete.');
@@ -816,6 +819,7 @@ export default class TaskflowPlugin extends Plugin {
         targetFolder = absoluteTrueFolder;
       } else if (propertyValue === false) {
         if (currentFolderPath === absoluteTrueFolder) return; // archived manually, don't evict
+        if (absoluteGoalBacklogFolder && currentFolderPath === absoluteGoalBacklogFolder) return; // in backlog, don't evict
         targetFolder = absoluteFalseFolder;
       }
 
